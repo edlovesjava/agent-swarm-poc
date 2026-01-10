@@ -1,0 +1,85 @@
+# Agent Swarm Configuration
+# Place this file at .github/agents/config.yaml in repositories where agents should work
+
+version: 1
+
+# Which issues agents can pick up
+issue_filter:
+  labels:
+    include:
+      - agent-ok          # Explicit opt-in
+      - good-first-issue  # Simple tasks
+      - bug               # Bug fixes
+    exclude:
+      - security          # Never auto-handle security issues
+      - breaking-change   # Requires human architectural review
+      - wontfix           # Explicitly declined
+  
+  # Require upvotes before agent picks up (0 = no requirement)
+  min_upvotes: 0
+
+# Coordination settings
+coordination:
+  # How long file locks are held (minutes)
+  file_lock_ttl_minutes: 30
+  
+  # Maximum concurrent agents working on this repo
+  max_concurrent_agents: 3
+  
+  # Branch naming
+  branch_prefix: "agent/"
+
+# Model preferences (override defaults for cost optimization)
+models:
+  # Use cheaper Haiku for these issue labels
+  prefer_haiku_for:
+    - documentation
+    - typo
+    - dependency-update
+    - chore
+  
+  # Require Sonnet for these (default)
+  require_sonnet_for:
+    - refactor
+    - feature
+    - bug
+  
+  # Only use Opus for architectural work
+  require_opus_for:
+    - architecture
+    - rfc
+
+# Plan approval settings
+approval:
+  # Auto-approve plans for trivial issues with these labels
+  auto_approve:
+    complexity:
+      - trivial
+    labels:
+      - auto-approve-ok
+  
+  # Default: require human approval for plans
+  require_approval: true
+
+# Failure handling
+failure:
+  # How many times fixer agent can retry before escalating
+  max_fixer_attempts: 2
+  
+  # Auto-escalate to human after this many minutes
+  auto_escalate_after_minutes: 60
+
+# PR settings
+pull_request:
+  # Base branch for PRs (default: repo default branch)
+  base_branch: null
+  
+  # Labels to add to agent PRs
+  labels:
+    - agent-pr
+  
+  # Require these checks to pass before agent considers PR ready
+  required_checks:
+    - build
+    - test
+    - lint

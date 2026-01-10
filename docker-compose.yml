@@ -1,0 +1,44 @@
+services:
+  orchestrator:
+    build: .
+    ports:
+      - "8000:8000"
+    environment:
+      - REDIS_URL=redis://redis:6379
+      - GITHUB_APP_ID=${GITHUB_APP_ID}
+      - GITHUB_APP_PRIVATE_KEY=${GITHUB_APP_PRIVATE_KEY}
+      - GITHUB_WEBHOOK_SECRET=${GITHUB_WEBHOOK_SECRET}
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
+    volumes:
+      - ./src:/app/src:ro
+      - workspaces:/workspaces
+      - /var/run/docker.sock:/var/run/docker.sock  # For spawning agent containers
+    depends_on:
+      - redis
+    restart: unless-stopped
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis-data:/data
+    command: redis-server --appendonly yes
+    restart: unless-stopped
+
+  # Agent container template (spawned on demand by orchestrator)
+  # This is not started by default, just defines the image
+  agent-worker:
+    image: ghcr.io/openhands/openhands:latest
+    profiles: ["agent"]  # Only started explicitly
+    environment:
+      - SANDBOX_USER_ID=1000
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+    volumes:
+      - workspaces:/workspaces
+      - /var/run/docker.sock:/var/run/docker.sock
+
+volumes:
+  redis-data:
+  workspaces:
