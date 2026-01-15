@@ -1,7 +1,14 @@
 """Tests for state machine."""
 
+import os
 import pytest
 from datetime import datetime, timezone
+
+# Set test environment variables before imports that might trigger Settings
+os.environ.setdefault("GITHUB_APP_ID", "test")
+os.environ.setdefault("GITHUB_APP_PRIVATE_KEY", "test")
+os.environ.setdefault("GITHUB_WEBHOOK_SECRET", "test")
+os.environ.setdefault("ANTHROPIC_API_KEY", "test")
 
 from src.orchestrator.state_machine import (
     Decision,
@@ -16,8 +23,10 @@ class TestTaskState:
     """Test task state transitions."""
     
     def test_valid_transitions_from_queued(self):
-        """QUEUED can only transition to PLANNING."""
-        assert TRANSITIONS[TaskState.QUEUED] == [TaskState.PLANNING]
+        """QUEUED can transition to PLANNING or PM_VISION."""
+        valid = TRANSITIONS[TaskState.QUEUED]
+        assert TaskState.PLANNING in valid
+        assert TaskState.PM_VISION in valid
     
     def test_valid_transitions_from_plan_review(self):
         """PLAN_REVIEW can go to APPROVED or back to PLANNING."""

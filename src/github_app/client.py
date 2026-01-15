@@ -320,3 +320,208 @@ class GitHubClient:
         """Get the SHA of a branch."""
         result = await self._request("GET", repo, f"/git/ref/heads/{branch}")
         return result["object"]["sha"]
+
+    # === File Operations (for PM Agent artifacts) ===
+
+    async def get_file_content(
+        self,
+        repo: str,
+        path: str,
+        branch: str | None = None,
+    ) -> str | None:
+        """Get content of a file from the repository.
+
+        Used by PM Agent to read existing VISION.md and BACKLOG.md.
+
+        Args:
+            repo: Repository in "owner/name" format
+            path: Path to file in repository
+            branch: Branch to read from (defaults to repo's default branch)
+
+        Returns:
+            File content as string, or None if file doesn't exist
+        """
+        import base64
+
+        try:
+            params = {}
+            if branch:
+                params["ref"] = branch
+
+            result = await self._request(
+                "GET",
+                repo,
+                f"/contents/{path}",
+                params=params if params else None,
+            )
+
+            # Content is base64 encoded
+            content = result.get("content", "")
+            if content:
+                # Remove newlines from base64 content
+                content = content.replace("\n", "")
+                return base64.b64decode(content).decode("utf-8")
+            return None
+
+        except httpx.HTTPStatusError as e:
+            if e.response.status_code == 404:
+                return None
+            raise
+
+    async def create_or_update_file(
+        self,
+        repo: str,
+        path: str,
+        content: str,
+        message: str,
+        branch: str | None = None,
+    ) -> dict[str, Any]:
+        """Create or update a file in the repository.
+
+        Used by PM Agent to manage VISION.md and BACKLOG.md.
+
+        Args:
+            repo: Repository in "owner/name" format
+            path: Path to file in repository
+            content: New file content
+            message: Commit message
+            branch: Branch to update (defaults to repo's default branch)
+
+        Returns:
+            API response with commit info
+        """
+        import base64
+
+        # Get current file SHA if it exists (needed for updates)
+        sha = None
+        try:
+            params = {}
+            if branch:
+                params["ref"] = branch
+
+            existing = await self._request(
+                "GET",
+                repo,
+                f"/contents/{path}",
+                params=params if params else None,
+            )
+            sha = existing.get("sha")
+        except httpx.HTTPStatusError as e:
+            if e.response.status_code != 404:
+                raise
+
+        # Prepare request data
+        data: dict[str, Any] = {
+            "message": message,
+            "content": base64.b64encode(content.encode("utf-8")).decode("utf-8"),
+        }
+
+        if sha:
+            data["sha"] = sha
+
+        if branch:
+            data["branch"] = branch
+
+        result = await self._request(
+            "PUT",
+            repo,
+            f"/contents/{path}",
+            json=data,
+        )
+
+        action = "Updated" if sha else "Created"
+        logger.info(f"{action} file", repo=repo, path=path)
+        return result
+
+    # === Issues ===
+
+    async def create_issue(
+        self,
+        repo: str,
+        title: str,
+        body: str,
+        labels: list[str] | None = None,
+        milestone: int | None = None,
+        assignees: list[str] | None = None,
+    ) -> dict[str, Any]:
+        """Create a new issue in the repository.
+
+        Used by PM Agent to create feature issues from backlog.
+
+        Args:
+            repo: Repository in "owner/name" format
+            title: Issue title
+            body: Issue body (markdown)
+            labels: Optional list of label names
+            milestone: Optional milestone number
+            assignees: Optional list of usernames to assign
+
+        Returns:
+            Created issue data
+        """
+        data: dict[str, Any] = {
+            "title": title,
+            "body": body,
+        }
+
+        if labels:
+            data["labels"] = labels
+        if milestone:
+            data["milestone"] = milestone
+        if assignees:
+            data["assignees"] = assignees
+
+        result = await self._request("POST", repo, "/issues", json=data)
+        logger.info(
+            "Created issue",
+            repo=repo,
+            number=result.get("number"),
+            title=title,
+        )
+        return result
+
+    async def update_issue(
+        self,
+        repo: str,
+        issue_number: int,
+        title: str | None = None,
+        body: str | None = None,
+        state: str | None = None,
+        labels: list[str] | None = None,
+    ) -> dict[str, Any]:
+        """Update an existing issue.
+
+        Args:
+            repo: Repository in "owner/name" format
+            issue_number: Issue number to update
+            title: New title (optional)
+            body: New body (optional)
+            state: New state - "open" or "closed" (optional)
+            labels: New labels (replaces existing, optional)
+
+        Returns:
+            Updated issue data
+        """
+        data: dict[str, Any] = {}
+
+        if title is not None:
+            data["title"] = title
+        if body is not None:
+            data["body"] = body
+        if state is not None:
+            data["state"] = state
+        if labels is not None:
+            data["labels"] = labels
+
+        if not data:
+            # Nothing to update
+            return await self._request("GET", repo, f"/issues/{issue_number}")
+
+        result = await self._request(
+            "PATCH",
+            repo,
+            f"/issues/{issue_number}",
+            json=data,
+        )
+        logger.info("Updated issue", repo=repo, number=issue_number)
+        return result

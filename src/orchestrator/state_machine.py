@@ -28,6 +28,12 @@ class TaskState(str, Enum):
     HUMAN_ESCALATION = "human_escalation"
     COMPLETED = "completed"
     ARCHIVED = "archived"
+    # Product Manager states
+    PM_VISION = "pm_vision"
+    PM_VISION_REVIEW = "pm_vision_review"
+    PM_BACKLOG = "pm_backlog"
+    PM_FEATURE_REVIEW = "pm_feature_review"
+    PM_HANDOFF_PLANNER = "pm_handoff_planner"
 
 
 class Decision(BaseModel):
@@ -83,7 +89,7 @@ class Task(BaseModel):
 
 # Valid state transitions
 TRANSITIONS: dict[TaskState, list[TaskState]] = {
-    TaskState.QUEUED: [TaskState.PLANNING],
+    TaskState.QUEUED: [TaskState.PLANNING, TaskState.PM_VISION],
     TaskState.PLANNING: [TaskState.PLAN_REVIEW],
     TaskState.PLAN_REVIEW: [TaskState.APPROVED, TaskState.PLANNING],  # approve or revise
     TaskState.APPROVED: [TaskState.EXECUTING],
@@ -101,6 +107,12 @@ TRANSITIONS: dict[TaskState, list[TaskState]] = {
     TaskState.HUMAN_ESCALATION: [TaskState.QUEUED, TaskState.ARCHIVED],  # retry or abandon
     TaskState.COMPLETED: [],  # terminal
     TaskState.ARCHIVED: [],  # terminal
+    # Product Manager transitions
+    TaskState.PM_VISION: [TaskState.PM_VISION_REVIEW],
+    TaskState.PM_VISION_REVIEW: [TaskState.PM_VISION, TaskState.PM_BACKLOG],  # revise or proceed
+    TaskState.PM_BACKLOG: [TaskState.PM_FEATURE_REVIEW, TaskState.PM_VISION],
+    TaskState.PM_FEATURE_REVIEW: [TaskState.PM_BACKLOG, TaskState.PM_HANDOFF_PLANNER],
+    TaskState.PM_HANDOFF_PLANNER: [TaskState.PLANNING],  # connects to existing flow
 }
 
 

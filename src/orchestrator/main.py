@@ -87,7 +87,7 @@ async def github_webhook(
     
     logger.info(
         "Received webhook",
-        event=x_github_event,
+        github_event=x_github_event,
         action=payload.get("action"),
         repo=payload.get("repository", {}).get("full_name"),
     )
@@ -105,7 +105,7 @@ async def github_webhook(
         case "check_run":
             await router.handle_check_run_event(payload)
         case _:
-            logger.debug("Ignoring event", event=x_github_event)
+            logger.debug("Ignoring event", github_event=x_github_event)
     
     return {"status": "processed"}
 

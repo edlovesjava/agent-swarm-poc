@@ -105,28 +105,57 @@ Respond in this exact format:
         task: Task,
         context: dict[str, Any],
     ) -> AgentResult:
-        """Implement the approved plan."""
+        """Implement the approved plan (mock for PoC)."""
         plan = context.get("plan", "")
-        workdir = context.get("workdir", "")
-        
-        # TODO: Integrate with OpenHands runtime for actual implementation
-        # This is a placeholder for the implementation logic
-        
+
+        # Parse file list from plan
+        files_changed = self._parse_files_from_plan(plan)
+
+        # For PoC: just log what would be changed
         logger.info(
-            "Implementation requested",
+            "Mock implementation",
             task_id=task.id,
-            workdir=workdir,
+            files=files_changed,
         )
-        
-        # For now, return a placeholder
+
         return AgentResult(
             success=True,
             output={
-                "status": "implementation_pending",
-                "message": "OpenHands integration not yet implemented",
+                "status": "mock_implementation",
+                "files_changed": files_changed,
+                "branch": f"agent/{task.issue_number}-mock",
+                "message": "Mock implementation complete (OpenHands integration pending)",
             },
             tokens_used=self.tokens_used.copy(),
         )
+
+    def _parse_files_from_plan(self, plan: str) -> list[str]:
+        """Extract file paths from a plan."""
+        import re
+
+        files = []
+
+        # Look for common file path patterns
+        # Matches: `path/to/file.ext`, - path/to/file.ext, * path/to/file.ext
+        patterns = [
+            r"`([a-zA-Z0-9_\-./]+\.[a-zA-Z0-9]+)`",  # backtick quoted
+            r"[-*•]\s*`?([a-zA-Z0-9_\-./]+\.[a-zA-Z0-9]+)`?",  # list items
+            r"(?:modify|create|update|edit|change)\s+`?([a-zA-Z0-9_\-./]+\.[a-zA-Z0-9]+)`?",  # action verbs
+        ]
+
+        for pattern in patterns:
+            matches = re.findall(pattern, plan, re.IGNORECASE)
+            for match in matches:
+                # Filter out common false positives
+                if match and not match.startswith(("http", "www", "//")):
+                    if match not in files:
+                        files.append(match)
+
+        # If no files found, return a placeholder
+        if not files:
+            files = ["src/placeholder.py"]
+
+        return files
 
 
 class ReviewerAgent(BaseAgent):
