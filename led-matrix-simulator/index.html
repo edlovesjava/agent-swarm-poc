@@ -1,0 +1,262 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>8x8 LED Matrix Simulator</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Courier New', monospace;
+            background: #1a1a2e;
+            color: #eee;
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            padding: 20px;
+        }
+
+        h1 {
+            margin-bottom: 10px;
+            color: #00ff88;
+        }
+
+        .subtitle {
+            color: #666;
+            margin-bottom: 20px;
+            font-size: 14px;
+        }
+
+        .simulator-container {
+            display: flex;
+            gap: 40px;
+            align-items: flex-start;
+        }
+
+        .matrix-panel {
+            background: #0d0d1a;
+            padding: 20px;
+            border-radius: 12px;
+            border: 2px solid #333;
+        }
+
+        .matrix {
+            display: grid;
+            grid-template-columns: repeat(8, 1fr);
+            gap: 4px;
+            padding: 10px;
+            background: #000;
+            border-radius: 8px;
+        }
+
+        .led {
+            width: 40px;
+            height: 40px;
+            border-radius: 50%;
+            background: #1a1a1a;
+            border: 1px solid #333;
+            transition: all 0.05s ease;
+        }
+
+        .led.on {
+            background: #ff0040;
+            box-shadow: 0 0 10px #ff0040, 0 0 20px #ff0040, 0 0 30px #ff004080;
+            border-color: #ff6680;
+        }
+
+        .led.green {
+            background: #00ff88;
+            box-shadow: 0 0 10px #00ff88, 0 0 20px #00ff88, 0 0 30px #00ff8880;
+            border-color: #80ffbb;
+        }
+
+        .led.blue {
+            background: #0088ff;
+            box-shadow: 0 0 10px #0088ff, 0 0 20px #0088ff, 0 0 30px #0088ff80;
+            border-color: #80bbff;
+        }
+
+        .led.yellow {
+            background: #ffcc00;
+            box-shadow: 0 0 10px #ffcc00, 0 0 20px #ffcc00, 0 0 30px #ffcc0080;
+            border-color: #ffdd66;
+        }
+
+        .controls-panel {
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+        }
+
+        .button-container {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 15px;
+        }
+
+        .hw-button {
+            width: 80px;
+            height: 80px;
+            border-radius: 50%;
+            border: 4px solid #444;
+            background: linear-gradient(145deg, #2a2a3e, #1a1a2e);
+            color: #00ff88;
+            font-weight: bold;
+            font-size: 14px;
+            cursor: pointer;
+            transition: all 0.1s ease;
+            box-shadow: 0 4px 8px rgba(0,0,0,0.4);
+        }
+
+        .hw-button:hover {
+            border-color: #00ff88;
+        }
+
+        .hw-button:active, .hw-button.pressed {
+            transform: scale(0.95);
+            box-shadow: 0 2px 4px rgba(0,0,0,0.4);
+            background: linear-gradient(145deg, #1a1a2e, #2a2a3e);
+            border-color: #00ff88;
+        }
+
+        .key-hint {
+            color: #666;
+            font-size: 12px;
+        }
+
+        .info-panel {
+            background: #0d0d1a;
+            padding: 15px;
+            border-radius: 8px;
+            border: 1px solid #333;
+            min-width: 200px;
+        }
+
+        .info-panel h3 {
+            color: #00ff88;
+            margin-bottom: 10px;
+            font-size: 14px;
+        }
+
+        .info-row {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 5px;
+            font-size: 12px;
+        }
+
+        .info-label {
+            color: #888;
+        }
+
+        .info-value {
+            color: #fff;
+        }
+
+        .app-selector {
+            margin-top: 20px;
+        }
+
+        .app-selector select {
+            width: 100%;
+            padding: 8px;
+            background: #1a1a2e;
+            border: 1px solid #333;
+            color: #fff;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+
+        .app-selector select:focus {
+            outline: none;
+            border-color: #00ff88;
+        }
+
+        .status-bar {
+            margin-top: 20px;
+            padding: 10px 20px;
+            background: #0d0d1a;
+            border-radius: 8px;
+            border: 1px solid #333;
+            font-size: 12px;
+            color: #888;
+        }
+
+        .footer {
+            margin-top: 30px;
+            color: #444;
+            font-size: 12px;
+        }
+    </style>
+</head>
+<body>
+    <h1>8x8 LED Matrix Simulator</h1>
+    <p class="subtitle">ATtiny85 Prototyping Environment</p>
+
+    <div class="simulator-container">
+        <div class="matrix-panel">
+            <div class="matrix" id="matrix">
+                <!-- LEDs generated by JS -->
+            </div>
+        </div>
+
+        <div class="controls-panel">
+            <div class="button-container">
+                <button class="hw-button" id="btnA">BTN A</button>
+                <span class="key-hint">Press 'A' or 'Z'</span>
+            </div>
+            <div class="button-container">
+                <button class="hw-button" id="btnB">BTN B</button>
+                <span class="key-hint">Press 'B' or 'X'</span>
+            </div>
+
+            <div class="info-panel">
+                <h3>STATUS</h3>
+                <div class="info-row">
+                    <span class="info-label">App:</span>
+                    <span class="info-value" id="currentApp">None</span>
+                </div>
+                <div class="info-row">
+                    <span class="info-label">FPS:</span>
+                    <span class="info-value" id="fps">0</span>
+                </div>
+                <div class="info-row">
+                    <span class="info-label">Frame:</span>
+                    <span class="info-value" id="frameCount">0</span>
+                </div>
+
+                <div class="app-selector">
+                    <h3>SELECT APP</h3>
+                    <select id="appSelect">
+                        <option value="">-- Choose App --</option>
+                    </select>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="status-bar" id="statusBar">
+        Ready. Select an app to begin.
+    </div>
+
+    <div class="footer">
+        Keyboard: A/Z = Button A | B/X = Button B | R = Reset | Space = Pause
+    </div>
+
+    <script src="simulator.js"></script>
+    <script src="apps/demo.js"></script>
+    <script>
+        // Initialize and start
+        document.addEventListener('DOMContentLoaded', () => {
+            Simulator.init();
+        });
+    </script>
+</body>
+</html>
