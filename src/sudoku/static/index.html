@@ -1,0 +1,450 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>Sudoku</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    background: #1a1a2e;
+    color: #eee;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    min-height: 100vh;
+    padding: 12px;
+  }
+  h1 { font-size: 1.4rem; margin-bottom: 8px; color: #e94560; }
+
+  /* Controls */
+  .controls {
+    display: flex;
+    gap: 8px;
+    margin-bottom: 10px;
+    flex-wrap: wrap;
+    justify-content: center;
+  }
+  .controls button, .controls select {
+    background: #16213e;
+    color: #eee;
+    border: 1px solid #0f3460;
+    border-radius: 6px;
+    padding: 8px 14px;
+    font-size: 0.9rem;
+    cursor: pointer;
+  }
+  .controls button:hover { background: #0f3460; }
+  .controls button:disabled { opacity: 0.5; cursor: default; }
+
+  /* Status bar */
+  .status {
+    font-size: 0.85rem;
+    margin-bottom: 8px;
+    color: #aaa;
+    text-align: center;
+  }
+  .status .online { color: #4ade80; }
+  .status .offline { color: #f87171; }
+  .status .cache-count { color: #60a5fa; }
+
+  /* Grid */
+  .grid {
+    display: grid;
+    grid-template-columns: repeat(9, 1fr);
+    gap: 0;
+    width: min(95vw, 450px);
+    aspect-ratio: 1;
+    background: #0f3460;
+    border: 3px solid #e94560;
+    border-radius: 4px;
+  }
+  .cell {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: min(6vw, 1.8rem);
+    font-weight: 600;
+    background: #16213e;
+    border: 1px solid #0f3460;
+    cursor: pointer;
+    user-select: none;
+    position: relative;
+    aspect-ratio: 1;
+  }
+  /* Thicker borders for 3x3 boxes */
+  .cell:nth-child(9n+4), .cell:nth-child(9n+7) { border-left: 2px solid #e94560; }
+  .cell:nth-child(n+19):nth-child(-n+27),
+  .cell:nth-child(n+46):nth-child(-n+54) { border-top: 2px solid #e94560; }
+
+  .cell.fixed { color: #8899bb; cursor: default; }
+  .cell.selected { background: #1a3a6e; }
+  .cell.error { color: #ef4444; background: #2d1520; }
+  .cell.correct-flash { animation: flash-green 0.4s; }
+  .cell.highlight { background: #1a2d50; }
+
+  @keyframes flash-green {
+    0% { background: #16213e; }
+    50% { background: #134e2a; }
+    100% { background: #16213e; }
+  }
+
+  /* Number pad */
+  .numpad {
+    display: grid;
+    grid-template-columns: repeat(5, 1fr);
+    gap: 6px;
+    margin-top: 12px;
+    width: min(95vw, 450px);
+  }
+  .numpad button {
+    background: #16213e;
+    color: #eee;
+    border: 1px solid #0f3460;
+    border-radius: 8px;
+    padding: 12px;
+    font-size: 1.3rem;
+    font-weight: 700;
+    cursor: pointer;
+  }
+  .numpad button:hover { background: #0f3460; }
+  .numpad button.erase { font-size: 1rem; font-weight: 400; }
+
+  /* Win message */
+  .win-overlay {
+    display: none;
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,0.8);
+    align-items: center;
+    justify-content: center;
+    flex-direction: column;
+    z-index: 10;
+  }
+  .win-overlay.show { display: flex; }
+  .win-overlay h2 { font-size: 2rem; color: #4ade80; margin-bottom: 16px; }
+  .win-overlay button {
+    background: #e94560;
+    color: white;
+    border: none;
+    border-radius: 8px;
+    padding: 12px 32px;
+    font-size: 1.1rem;
+    cursor: pointer;
+  }
+
+  /* Timer */
+  .timer { font-size: 1.1rem; font-variant-numeric: tabular-nums; color: #60a5fa; }
+</style>
+</head>
+<body>
+
+<h1>Sudoku</h1>
+
+<div class="status">
+  <span id="connection" class="online">Online</span>
+  &middot; Cached: <span id="cacheCount" class="cache-count">0</span>
+  &middot; <span class="timer" id="timer">00:00</span>
+</div>
+
+<div class="controls">
+  <select id="difficulty">
+    <option value="100">Easy</option>
+    <option value="150" selected>Medium</option>
+    <option value="300">Hard</option>
+    <option value="450">Expert</option>
+  </select>
+  <button id="newGame">New Game</button>
+</div>
+
+<div class="grid" id="grid"></div>
+
+<div class="numpad" id="numpad"></div>
+
+<div class="win-overlay" id="winOverlay">
+  <h2>Puzzle Complete!</h2>
+  <p id="winTime" style="margin-bottom:16px;color:#aaa;"></p>
+  <button id="playAgain">Play Again</button>
+</div>
+
+<script>
+const CACHE_KEY = "sudoku_cache";
+const SAVE_KEY = "sudoku_save";
+const CACHE_SIZE = 5;
+
+let board = [];       // {value, fixed, solution, error}
+let selected = null;  // {row, col}
+let timerStart = null;
+let timerInterval = null;
+let gameActive = false;
+
+// --- Cache & Network ---
+
+function getCache() {
+  try { return JSON.parse(localStorage.getItem(CACHE_KEY) || "[]"); }
+  catch { return []; }
+}
+function setCache(c) { localStorage.setItem(CACHE_KEY, JSON.stringify(c)); }
+function updateCacheUI() { document.getElementById("cacheCount").textContent = getCache().length; }
+
+async function fetchPuzzle(rank) {
+  const res = await fetch(`/puzzle?rank=${rank}`);
+  if (!res.ok) throw new Error("fetch failed");
+  return res.json();
+}
+
+async function fillCache() {
+  const cache = getCache();
+  const need = CACHE_SIZE - cache.length;
+  if (need <= 0) return;
+  const ranks = [100, 150, 150, 300, 450];
+  for (let i = 0; i < need; i++) {
+    try {
+      const puzzle = await fetchPuzzle(ranks[i % ranks.length]);
+      cache.push(puzzle);
+    } catch { break; }
+  }
+  setCache(cache);
+  updateCacheUI();
+}
+
+function pullFromCache(rank) {
+  const cache = getCache();
+  // Try to find matching difficulty, else take any
+  let idx = cache.findIndex(p => p.difficulty === rank);
+  if (idx === -1 && cache.length > 0) idx = 0;
+  if (idx === -1) return null;
+  const puzzle = cache.splice(idx, 1)[0];
+  setCache(cache);
+  updateCacheUI();
+  return puzzle;
+}
+
+// --- Board ---
+
+function initBoard(puzzleStr, solutionStr) {
+  board = [];
+  for (let r = 0; r < 9; r++) {
+    const row = [];
+    for (let c = 0; c < 9; c++) {
+      const i = r * 9 + c;
+      const v = parseInt(puzzleStr[i]);
+      row.push({
+        value: v || null,
+        fixed: v !== 0,
+        solution: parseInt(solutionStr[i]),
+        error: false,
+      });
+    }
+    board.push(row);
+  }
+  selected = null;
+  renderGrid();
+}
+
+function saveGame() {
+  if (!gameActive) return;
+  const data = { board, timerElapsed: Math.floor((Date.now() - timerStart) / 1000) };
+  localStorage.setItem(SAVE_KEY, JSON.stringify(data));
+}
+
+function loadSavedGame() {
+  try {
+    const data = JSON.parse(localStorage.getItem(SAVE_KEY));
+    if (!data || !data.board) return false;
+    board = data.board;
+    selected = null;
+    startTimer(data.timerElapsed || 0);
+    gameActive = true;
+    renderGrid();
+    return true;
+  } catch { return false; }
+}
+
+function clearSave() { localStorage.removeItem(SAVE_KEY); }
+
+// --- Render ---
+
+function renderGrid() {
+  const grid = document.getElementById("grid");
+  grid.innerHTML = "";
+  for (let r = 0; r < 9; r++) {
+    for (let c = 0; c < 9; c++) {
+      const cell = document.createElement("div");
+      cell.className = "cell";
+      const b = board[r][c];
+      if (b.fixed) cell.classList.add("fixed");
+      if (b.error) cell.classList.add("error");
+      if (selected && selected.row === r && selected.col === c) cell.classList.add("selected");
+      // Highlight same row/col/box
+      if (selected && !b.fixed && !(selected.row === r && selected.col === c)) {
+        if (selected.row === r || selected.col === c ||
+            (Math.floor(selected.row/3) === Math.floor(r/3) &&
+             Math.floor(selected.col/3) === Math.floor(c/3))) {
+          cell.classList.add("highlight");
+        }
+      }
+      cell.textContent = b.value || "";
+      cell.addEventListener("click", () => selectCell(r, c));
+      grid.appendChild(cell);
+    }
+  }
+}
+
+function selectCell(r, c) {
+  if (!gameActive) return;
+  if (board[r][c].fixed) { selected = null; renderGrid(); return; }
+  selected = { row: r, col: c };
+  renderGrid();
+}
+
+function placeNumber(n) {
+  if (!selected || !gameActive) return;
+  const { row, col } = selected;
+  const cell = board[row][col];
+  if (cell.fixed) return;
+
+  cell.value = n;
+  cell.error = n !== cell.solution;
+
+  renderGrid();
+  saveGame();
+
+  if (!cell.error) {
+    // Flash green
+    const idx = row * 9 + col;
+    const el = document.getElementById("grid").children[idx];
+    el.classList.add("correct-flash");
+
+    if (checkWin()) endGame();
+  }
+}
+
+function eraseCell() {
+  if (!selected || !gameActive) return;
+  const { row, col } = selected;
+  const cell = board[row][col];
+  if (cell.fixed) return;
+  cell.value = null;
+  cell.error = false;
+  renderGrid();
+  saveGame();
+}
+
+function checkWin() {
+  for (let r = 0; r < 9; r++)
+    for (let c = 0; c < 9; c++)
+      if (board[r][c].value !== board[r][c].solution) return false;
+  return true;
+}
+
+// --- Timer ---
+
+function startTimer(offsetSec = 0) {
+  clearInterval(timerInterval);
+  timerStart = Date.now() - offsetSec * 1000;
+  timerInterval = setInterval(() => {
+    const s = Math.floor((Date.now() - timerStart) / 1000);
+    const m = Math.floor(s / 60);
+    const sec = s % 60;
+    document.getElementById("timer").textContent =
+      `${String(m).padStart(2,"0")}:${String(sec).padStart(2,"0")}`;
+  }, 1000);
+}
+
+// --- Game Flow ---
+
+async function newGame() {
+  const rank = parseInt(document.getElementById("difficulty").value);
+  const btn = document.getElementById("newGame");
+  btn.disabled = true;
+  btn.textContent = "Loading...";
+
+  let puzzle = null;
+  try {
+    puzzle = await fetchPuzzle(rank);
+  } catch {
+    puzzle = pullFromCache(rank);
+  }
+
+  if (!puzzle) {
+    btn.textContent = "No puzzles (offline)";
+    setTimeout(() => { btn.textContent = "New Game"; btn.disabled = false; }, 2000);
+    return;
+  }
+
+  clearSave();
+  initBoard(puzzle.initial_grid, puzzle.solution_key);
+  startTimer();
+  gameActive = true;
+  btn.textContent = "New Game";
+  btn.disabled = false;
+
+  // Replenish cache in background
+  fillCache();
+}
+
+function endGame() {
+  gameActive = false;
+  clearInterval(timerInterval);
+  clearSave();
+  const s = Math.floor((Date.now() - timerStart) / 1000);
+  const m = Math.floor(s / 60);
+  const sec = s % 60;
+  document.getElementById("winTime").textContent =
+    `Time: ${String(m).padStart(2,"0")}:${String(sec).padStart(2,"0")}`;
+  document.getElementById("winOverlay").classList.add("show");
+}
+
+// --- Init ---
+
+// Build numpad
+const numpad = document.getElementById("numpad");
+for (let n = 1; n <= 9; n++) {
+  const btn = document.createElement("button");
+  btn.textContent = n;
+  btn.addEventListener("click", () => placeNumber(n));
+  numpad.appendChild(btn);
+}
+const eraseBtn = document.createElement("button");
+eraseBtn.textContent = "Erase";
+eraseBtn.className = "erase";
+eraseBtn.addEventListener("click", eraseCell);
+numpad.appendChild(eraseBtn);
+
+// Keyboard support
+document.addEventListener("keydown", (e) => {
+  const n = parseInt(e.key);
+  if (n >= 1 && n <= 9) placeNumber(n);
+  if (e.key === "Backspace" || e.key === "Delete") eraseCell();
+  if (e.key === "ArrowUp" && selected) { selected.row = Math.max(0, selected.row - 1); renderGrid(); }
+  if (e.key === "ArrowDown" && selected) { selected.row = Math.min(8, selected.row + 1); renderGrid(); }
+  if (e.key === "ArrowLeft" && selected) { selected.col = Math.max(0, selected.col - 1); renderGrid(); }
+  if (e.key === "ArrowRight" && selected) { selected.col = Math.min(8, selected.col + 1); renderGrid(); }
+});
+
+// Online/offline detection
+function updateOnline() {
+  const el = document.getElementById("connection");
+  if (navigator.onLine) { el.textContent = "Online"; el.className = "online"; fillCache(); }
+  else { el.textContent = "Offline"; el.className = "offline"; }
+}
+window.addEventListener("online", updateOnline);
+window.addEventListener("offline", updateOnline);
+
+// Play again button
+document.getElementById("playAgain").addEventListener("click", () => {
+  document.getElementById("winOverlay").classList.remove("show");
+  newGame();
+});
+
+document.getElementById("newGame").addEventListener("click", newGame);
+
+// Start: try to restore saved game, else start new
+updateOnline();
+updateCacheUI();
+if (!loadSavedGame()) newGame();
+</script>
+</body>
+</html>
