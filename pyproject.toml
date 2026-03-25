@@ -18,6 +18,7 @@ dependencies = [
     "gitpython>=3.1.40",
     "structlog>=24.1.0",
     "python-multipart>=0.0.6",
+    "dokusan>=0.1.0",
 ]
 
 [project.optional-dependencies]
